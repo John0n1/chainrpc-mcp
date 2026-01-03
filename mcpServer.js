@@ -1,15 +1,22 @@
 
-SPDX-License-Identifier; MIT
+// SPDX-License-Identifier: MIT
 // mcpServer.js - copyright (c) 2025 John Hauger Mitander
 require('dotenv').config();
 
 const express = require('express');
 const { McpServer } = require('@modelcontextprotocol/sdk/server/mcp.js');
-const { StreamableHTTPServerTransport } = require('@modelcontextprotocol/sdk/server/streamableHttp.js');
 const { z } = require('zod');
+const pkg = require('./package.json');
+
+const SERVER_NAME = 'geth-mcp-proxy';
+const SERVER_VERSION = pkg.version || '1.0.0';
 
 const app = express();
-const port = process.env.PORT ? Number(process.env.PORT) : 3000;
+const portValue = Number(process.env.PORT);
+const port = Number.isFinite(portValue) && portValue > 0 ? portValue : 3000;
+if (process.env.PORT && port === 3000 && process.env.PORT !== '3000') {
+  console.warn(`[mcpServer] Invalid PORT "${process.env.PORT}", defaulting to 3000.`);
+}
 
 // Basic upfront env validation
 if (!process.env.GETH_URL) {
@@ -18,29 +25,52 @@ if (!process.env.GETH_URL) {
 
 // Shared McpServer instance (tools registered once)
 const mcpServer = new McpServer({
-  name: 'geth-mcp-proxy',
-  version: '1.1.0',
+  name: SERVER_NAME,
+  version: SERVER_VERSION,
   description: 'Proxy for Ethereum JSON-RPC queries via Geth endpoint'
 });
 
 // Maintain our own registry of tool names + schemas + handlers (SDK doesn't expose a stable public map)
 const registeredToolNames = [];
+const registeredToolNameSet = new Set();
+const registeredToolLowercaseMap = new Map();
 const registeredToolSchemas = {};
 const registeredToolHandlers = {};
 function normalizeToolName(name) {
-  return String(name || '')
+  return String(name || '').trim();
+}
+function addToolName(name) {
+  if (registeredToolNameSet.has(name)) return;
+  registeredToolNameSet.add(name);
+  registeredToolNames.push(name);
+  const lower = name.toLowerCase();
+  if (!registeredToolLowercaseMap.has(lower)) registeredToolLowercaseMap.set(lower, name);
+}
+function resolveToolName(name) {
+  const normalized = normalizeToolName(name);
+  if (!normalized) return null;
+  if (registeredToolHandlers[normalized]) return normalized;
+  return registeredToolLowercaseMap.get(normalized.toLowerCase()) || null;
 }
 function registerTool(name, schema, handler, jsonSchema) {
   const safeName = normalizeToolName(name);
+  if (!safeName) {
+    console.warn('[mcpServer] Skipping tool registration for empty name.');
+    return;
+  }
   if (safeName !== name) {
-    console.warn(`[mcpServer] Normalizing tool name "${name}" -> "${safeName}" to satisfy [a-z0-9_-]`);
+    console.warn(`[mcpServer] Normalizing tool name "${name}" -> "${safeName}" (trimmed).`);
   }
   // Enforce prefix policy: only eth_ admin_ debug_ txpool_ tool names are allowed
   if (!/^(eth|admin|debug|txpool)_/.test(safeName)) {
     console.warn(`[mcpServer] Skipping tool registration for "${safeName}" because it does not start with eth_/admin_/debug_/txpool_.`);
     return;
   }
-  registeredToolNames.push(safeName);
+  if (registeredToolHandlers[safeName]) {
+    console.warn(`[mcpServer] Skipping duplicate tool registration for "${safeName}".`);
+    return;
+  }
+  addToolName(safeName);
   if (jsonSchema) registeredToolSchemas[safeName] = { inputSchema: jsonSchema, description: schema.description };
   registeredToolHandlers[safeName] = { handler, schema };
   mcpServer.registerTool(safeName, schema, handler); // Keep SDK registration for future streaming use
@@ -55,7 +85,7 @@ function registerAlias(aliasName, targetName, descriptionOverride) {
     return;
   }
   // Aliases may not follow the eth_/admin_/debug_/txpool_ prefix; allow them explicitly
-  registeredToolNames.push(alias);
+  addToolName(alias);
   const targetSchema = registeredToolSchemas[target]?.inputSchema;
   const targetDesc = registeredToolSchemas[target]?.description || registeredToolHandlers[target]?.schema?.description || `Alias of ${target}`;
   if (targetSchema) registeredToolSchemas[alias] = { inputSchema: targetSchema, description: descriptionOverride || `Alias of ${target}: ${targetDesc}` };
@@ -105,6 +135,11 @@ async function queryGeth(method, params) {
   return data.result;
 }
 
+function isSendRawTxAllowed() {
+  const value = String(process.env.ALLOW_SEND_RAW_TX || '').trim().toLowerCase();
+  return value === '1' || value === 'true' || value === 'yes';
+}
+
 function hexToDecimalMaybe(hex) {
   if (typeof hex === 'string' && /^0x[0-9a-fA-F]+$/.test(hex)) {
     try {
@@ -114,6 +149,26 @@ function hexToDecimalMaybe(hex) {
     }
   }
   return null;
+}
+
+function normalizeBlockTag(value, fallback = 'latest') {
+  if (value === undefined || value === null) return fallback;
+  if (typeof value === 'number' && Number.isInteger(value) && value >= 0) {
+    return `0x${value.toString(16)}`;
+  }
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (trimmed === '') return fallback;
+    if (/^\d+$/.test(trimmed)) {
+      try {
+        return `0x${BigInt(trimmed).toString(16)}`;
+      } catch {
+        return trimmed;
+      }
+    }
+    return trimmed;
+  }
+  return String(value);
 }
 
 // Tool: eth_blockNumber (correct JSON-RPC name)
@@ -130,12 +185,13 @@ registerTool(
 // Tool: getBalance
 registerTool(
   'eth_getBalance',
-  { description: 'Get balance of an address (hex + decimal).', inputSchema: z.object({ address: z.string(), block: z.string().optional() }) },
-  async ({ address, block = 'latest' }) => {
-    const hex = await queryGeth('eth_getBalance', [address, block]); const dec = hexToDecimalMaybe(hex);
+  { description: 'Get balance of an address (hex + decimal).', inputSchema: z.object({ address: z.string(), block: z.union([z.string(), z.number()]).optional() }) },
+  async ({ address, block }) => {
+    const blockTag = normalizeBlockTag(block, 'latest');
+    const hex = await queryGeth('eth_getBalance', [address, blockTag]); const dec = hexToDecimalMaybe(hex);
     return { content: [{ type: 'text', text: JSON.stringify({ address, balanceHex: hex, balanceWei: dec }) }] };
   },
-  { type: 'object', properties: { address: { type: 'string' }, block: { type: 'string' } }, required: ['address'], additionalProperties: false }
+  { type: 'object', properties: { address: { type: 'string' }, block: { type: ['string','number'] } }, required: ['address'], additionalProperties: false }
 );
 
 // Additional Ethereum convenience tools
@@ -168,12 +224,13 @@ registerTool(
 );
 registerTool(
   'eth_getBlockByNumber',
-  { description: 'Fetch block by number/tag.', inputSchema: z.object({ block: z.string(), full: z.boolean().optional() }) },
+  { description: 'Fetch block by number/tag.', inputSchema: z.object({ block: z.union([z.string(), z.number()]), full: z.boolean().optional() }) },
   async ({ block, full = false }) => {
-    const result = await queryGeth('eth_getBlockByNumber', [block, full]);
+    const blockTag = normalizeBlockTag(block);
+    const result = await queryGeth('eth_getBlockByNumber', [blockTag, full]);
     return { content: [{ type: 'text', text: JSON.stringify(result) }] };
   },
-  { type: 'object', properties: { block: { type: 'string' }, full: { type: 'boolean' } }, required: ['block'], additionalProperties: false }
+  { type: 'object', properties: { block: { type: ['string','number'] }, full: { type: 'boolean' } }, required: ['block'], additionalProperties: false }
 );
 registerTool(
   'eth_getTransactionByHash',
@@ -229,12 +286,13 @@ registerTool(
 );
 registerTool(
   'eth_call',
-  { description: 'Execute a call without a transaction.', inputSchema: z.object({ to: z.string(), data: z.string(), block: z.string().optional() }) },
-  async ({ to, data, block = 'latest' }) => {
-    const result = await queryGeth('eth_call', [{ to, data }, block]);
+  { description: 'Execute a call without a transaction.', inputSchema: z.object({ to: z.string(), data: z.string(), block: z.union([z.string(), z.number()]).optional() }) },
+  async ({ to, data, block }) => {
+    const blockTag = normalizeBlockTag(block, 'latest');
+    const result = await queryGeth('eth_call', [{ to, data }, blockTag]);
     return { content: [{ type: 'text', text: JSON.stringify({ result }) }] };
   },
-  { type: 'object', properties: { to: { type: 'string' }, data: { type: 'string' }, block: { type: 'string' } }, required: ['to','data'], additionalProperties: false }
+  { type: 'object', properties: { to: { type: 'string' }, data: { type: 'string' }, block: { type: ['string','number'] } }, required: ['to','data'], additionalProperties: false }
 );
 registerTool(
   'eth_estimateGas',
@@ -249,13 +307,29 @@ registerTool(
   'eth_sendRawTransaction',
   { description: 'Broadcast a signed raw transaction (hex). WARNING: ensure the tx is trusted.', inputSchema: z.object({ rawTx: z.string() }) },
   async ({ rawTx }) => {
-    if (!process.env.ALLOW_SEND_RAW_TX) {
-      return { content: [{ type: 'text', text: JSON.stringify({ error: 'Disabled. Set ALLOW_SEND_RAW_TX=1 to enable.' }) }] };
+    if (!isSendRawTxAllowed()) {
+      return { content: [{ type: 'text', text: JSON.stringify({ error: 'Disabled. Set ALLOW_SEND_RAW_TX=1 (or true) to enable.' }) }] };
     }
     const hash = await queryGeth('eth_sendRawTransaction', [rawTx]);
     return { content: [{ type: 'text', text: JSON.stringify({ txHash: hash }) }] };
   },
   { type: 'object', properties: { rawTx: { type: 'string' } }, required: ['rawTx'], additionalProperties: false }
+);
+registerTool(
+  'eth_callRaw',
+  { description: 'Call any Ethereum JSON-RPC method with a params array.', inputSchema: z.object({ method: z.string(), params: z.array(z.any()).optional() }) },
+  async ({ method, params = [] }) => {
+    const methodName = String(method || '').trim();
+    if (!methodName) {
+      return { content: [{ type: 'text', text: JSON.stringify({ error: 'Missing method name.' }) }] };
+    }
+    if (methodName === 'eth_sendRawTransaction' && !isSendRawTxAllowed()) {
+      return { content: [{ type: 'text', text: JSON.stringify({ error: 'Disabled. Set ALLOW_SEND_RAW_TX=1 (or true) to enable.' }) }] };
+    }
+    const result = await queryGeth(methodName, params);
+    return { content: [{ type: 'text', text: JSON.stringify({ result }) }] };
+  },
+  { type: 'object', properties: { method: { type: 'string' }, params: { type: 'array', items: {} } }, required: ['method'], additionalProperties: false }
 );
 registerTool(
   'eth_getTransactionReceipt',
@@ -271,28 +345,34 @@ registerTool(
   { description: 'Fetch logs by filter (address, topics, block range).', inputSchema: z.object({
     address: z.string().optional(),
     topics: z.array(z.string()).optional(),
-    fromBlock: z.string().optional(),
-    toBlock: z.string().optional()
+    fromBlock: z.union([z.string(), z.number()]).optional(),
+    toBlock: z.union([z.string(), z.number()]).optional()
   }) },
-  async ({ address, topics, fromBlock = 'earliest', toBlock = 'latest' }) => {
-    const filter = { address, topics, fromBlock, toBlock };
+  async ({ address, topics, fromBlock, toBlock }) => {
+    const filter = {
+      address,
+      topics,
+      fromBlock: normalizeBlockTag(fromBlock, 'earliest'),
+      toBlock: normalizeBlockTag(toBlock, 'latest')
+    };
     const logs = await queryGeth('eth_getLogs', [filter]);
     return { content: [{ type: 'text', text: JSON.stringify(logs) }] };
   },
-  { type: 'object', properties: { address: { type: 'string' }, topics: { type: 'array', items: { type: 'string' } }, fromBlock: { type: 'string' }, toBlock: { type: 'string' } }, additionalProperties: false }
+  { type: 'object', properties: { address: { type: 'string' }, topics: { type: 'array', items: { type: 'string' } }, fromBlock: { type: ['string','number'] }, toBlock: { type: ['string','number'] } }, additionalProperties: false }
 );
 registerTool(
   'eth_getProof',
   { description: 'Get account proof for a given address and block.', inputSchema: z.object({
     address: z.string(),
     storageKeys: z.array(z.string()).optional(),
-    block: z.string().optional()
+    block: z.union([z.string(), z.number()]).optional()
   }) },
-  async ({ address, storageKeys = [], block = 'latest' }) => {
-    const proof = await queryGeth('eth_getProof', [address, storageKeys, block]);
+  async ({ address, storageKeys = [], block }) => {
+    const blockTag = normalizeBlockTag(block, 'latest');
+    const proof = await queryGeth('eth_getProof', [address, storageKeys, blockTag]);
     return { content: [{ type: 'text', text: JSON.stringify(proof) }] };
   },
-  { type: 'object', properties: { address: { type: 'string' }, storageKeys: { type: 'array', items: { type: 'string' } }, block: { type: 'string' } }, required: ['address'], additionalProperties: false }
+  { type: 'object', properties: { address: { type: 'string' }, storageKeys: { type: 'array', items: { type: 'string' } }, block: { type: ['string','number'] } }, required: ['address'], additionalProperties: false }
 );
 registerTool(
   'debug_traceTransaction',
@@ -305,36 +385,41 @@ registerTool(
 );
 registerTool(
   'debug_blockProfile',
-  { description: 'Get block profile (Geth debug).', inputSchema: z.object({ block: z.string() }) },
+  { description: 'Get block profile (Geth debug).', inputSchema: z.object({ block: z.union([z.string(), z.number()]) }) },
   async ({ block }) => {
-    const profile = await queryGeth('debug_blockProfile', [block]);
+    const blockTag = normalizeBlockTag(block);
+    const profile = await queryGeth('debug_blockProfile', [blockTag]);
     return { content: [{ type: 'text', text: JSON.stringify(profile) }] };
   },
-  { type: 'object', properties: { block: { type: 'string' } }, required: ['block'], additionalProperties: false }
+  { type: 'object', properties: { block: { type: ['string','number'] } }, required: ['block'], additionalProperties: false }
 );
 registerTool(
   'debug_getBlockRlp',
-  { description: 'Get RLP encoding of a block by number or hash (Geth debug).', inputSchema: z.object({ block: z.string() }) },
+  { description: 'Get RLP encoding of a block by number or hash (Geth debug).', inputSchema: z.object({ block: z.union([z.string(), z.number()]) }) },
   async ({ block }) => {
-    const rlp = await queryGeth('debug_getBlockRlp', [block]);
+    const blockTag = normalizeBlockTag(block);
+    const rlp = await queryGeth('debug_getBlockRlp', [blockTag]);
     return { content: [{ type: 'text', text: JSON.stringify({ rlp }) }] };
   },
-  { type: 'object', properties: { block: { type: 'string' } }, required: ['block'], additionalProperties: false }
+  { type: 'object', properties: { block: { type: ['string','number'] } }, required: ['block'], additionalProperties: false }
 );
 
   
 
 // Friendly aliases requested: isSyncing, getBlock, getPeers, etc.
 registerAlias('isSyncing', 'eth_syncing', 'Friendly alias for eth_syncing');
+registerAlias('eth_isSyncing', 'eth_syncing', 'Compatibility alias for eth_syncing');
 registerAlias('getBlock', 'eth_getBlockByNumber', 'Friendly alias for eth_getBlockByNumber');
 registerAlias('getPeers', 'admin_peers', 'Friendly alias for admin_peers');
 registerAlias('getBlockNumber', 'eth_blockNumber', 'Friendly alias for eth_blockNumber');
+registerAlias('eth_getBlockNumber', 'eth_blockNumber', 'Compatibility alias for eth_blockNumber');
 registerAlias('getBalance', 'eth_getBalance', 'Friendly alias for eth_getBalance');
 registerAlias('getChainId', 'eth_chainId', 'Friendly alias for eth_chainId');
 registerAlias('getGasPrice', 'eth_gasPrice', 'Friendly alias for eth_gasPrice');
 registerAlias('call', 'eth_call', 'Friendly alias for eth_call');
 registerAlias('estimateGas', 'eth_estimateGas', 'Friendly alias for eth_estimateGas');
 registerAlias('sendRawTransaction', 'eth_sendRawTransaction', 'Friendly alias for eth_sendRawTransaction');
+registerAlias('ethCallRaw', 'eth_callRaw', 'Friendly alias for eth_callRaw');
 registerAlias('getTransactionReceipt', 'eth_getTransactionReceipt', 'Friendly alias for eth_getTransactionReceipt');
 registerAlias('getLogs', 'eth_getLogs', 'Friendly alias for eth_getLogs');
 registerAlias('getProof', 'eth_getProof', 'Friendly alias for eth_getProof');
@@ -349,9 +434,51 @@ app.use((req, res, next) => {
   return express.json({ verify: (r, _res, buf) => { r.rawBody = buf.toString(); } })(req, res, next);
 });
 
+// Root info for quick discovery
+app.get('/', (_req, res) => {
+  res.json({
+    name: SERVER_NAME,
+    version: SERVER_VERSION,
+    status: 'ok',
+    endpoints: { mcp: '/mcp', health: '/health', blockNumber: '/blockNumber' },
+    config: { gethUrlConfigured: Boolean(process.env.GETH_URL), allowSendRawTx: isSendRawTxAllowed() }
+  });
+});
+
+// Health check with optional upstream verification (?upstream=1)
+app.get('/health', async (req, res) => {
+  const base = {
+    status: 'ok',
+    name: SERVER_NAME,
+    version: SERVER_VERSION,
+    port,
+    gethUrlConfigured: Boolean(process.env.GETH_URL),
+    allowSendRawTx: isSendRawTxAllowed()
+  };
+  const upstream = String(req.query.upstream || '').toLowerCase();
+  if (!['1', 'true', 'yes'].includes(upstream)) {
+    return res.json(base);
+  }
+  try {
+    const clientVersion = await queryGeth('web3_clientVersion', []);
+    return res.json({ ...base, upstream: { ok: true, clientVersion } });
+  } catch (e) {
+    return res.status(503).json({ ...base, upstream: { ok: false, error: e.message } });
+  }
+});
+
 // Health check (supports /mcp and /mcp/ + HEAD)
 function healthHandler(_req, res) {
-  res.json({ status: 'ok', name: 'geth-mcp-proxy', port, tools: registeredToolNames });
+  res.json({
+    status: 'ok',
+    name: SERVER_NAME,
+    version: SERVER_VERSION,
+    port,
+    gethUrlConfigured: Boolean(process.env.GETH_URL),
+    allowSendRawTx: isSendRawTxAllowed(),
+    toolCount: registeredToolNames.length,
+    tools: registeredToolNames
+  });
 }
 app.get(['/mcp','/mcp/'], healthHandler);
 app.head(['/mcp','/mcp/'], (req, res) => { res.status(200).end(); });
@@ -377,7 +504,7 @@ async function mcpHandler(req, res) {
         id,
         result: {
           protocolVersion: '2025-06-18',
-          serverInfo: { name: 'geth-mcp-proxy', version: '1.1.0' },
+          serverInfo: { name: SERVER_NAME, version: SERVER_VERSION },
           capabilities: { tools: registeredToolSchemas, roots: { listChanged: false } }
         }
       });
@@ -385,11 +512,13 @@ async function mcpHandler(req, res) {
 
     // 2. tools/list (MCP convenience)
   if (method === 'tools/list') {
-  console.log('[mcpServer] tools/list requested');
-      const tools = registeredToolNames.map(name => ({ name, description: registeredToolSchemas[name]?.description, inputSchema: registeredToolSchemas[name]?.inputSchema }));
-  console.log('[mcpServer] tools/list responding with', tools.length, 'tools');
-      return res.json({ jsonrpc: '2.0', id, result: { tools } });
-    }
+    console.log('[mcpServer] tools/list requested');
+    const tools = [...registeredToolNames]
+      .sort((a, b) => a.localeCompare(b))
+      .map(name => ({ name, description: registeredToolSchemas[name]?.description, inputSchema: registeredToolSchemas[name]?.inputSchema }));
+    console.log('[mcpServer] tools/list responding with', tools.length, 'tools');
+    return res.json({ jsonrpc: '2.0', id, result: { tools } });
+  }
 
     // 2b. MCP notifications (ack politely with empty result to avoid transport errors)
     if (typeof method === 'string' && method.startsWith('notifications/')) {
@@ -405,21 +534,29 @@ async function mcpHandler(req, res) {
         return res.status(400).json({ jsonrpc: '2.0', error: { code: -32602, message: 'Missing params' }, id });
       }
       const { name, arguments: args = {} } = params;
-      const safeName = normalizeToolName(name);
-      if (!safeName || !registeredToolHandlers[safeName]) {
-        console.warn('[mcpServer] Unknown tool requested', name, '->', safeName);
+      const resolvedName = resolveToolName(name);
+      if (!resolvedName || !registeredToolHandlers[resolvedName]) {
+        console.warn('[mcpServer] Unknown tool requested', name, '->', resolvedName);
         return res.status(404).json({ jsonrpc: '2.0', error: { code: -32601, message: `Unknown tool: ${name}` }, id });
       }
       try {
         // Zod validation if available
-        const zodSchema = registeredToolHandlers[safeName].schema.inputSchema;
+        const zodSchema = registeredToolHandlers[resolvedName].schema.inputSchema;
         const parsed = zodSchema ? zodSchema.parse(args) : args;
-        const toolResult = await registeredToolHandlers[safeName].handler(parsed);
-        console.log('[mcpServer] tools/call success', safeName);
+        const toolResult = await registeredToolHandlers[resolvedName].handler(parsed);
+        console.log('[mcpServer] tools/call success', resolvedName);
         return res.json({ jsonrpc: '2.0', id, result: toolResult });
       } catch (err) {
+        if (err instanceof z.ZodError) {
+          console.error('[mcpServer] tools/call invalid params', resolvedName, err.errors);
+          return res.status(400).json({
+            jsonrpc: '2.0',
+            id,
+            error: { code: -32602, message: 'Invalid params', data: err.flatten() }
+          });
+        }
         const message = err?.message || 'Tool execution error';
-        console.error('[mcpServer] tools/call error', safeName, message);
+        console.error('[mcpServer] tools/call error', resolvedName, message);
         return res.status(500).json({ jsonrpc: '2.0', id, error: { code: -32000, message } });
       }
     }
@@ -477,7 +614,7 @@ if (require.main === module) {
       console.warn('[mcpServer] Warning configuring HTTP timeouts:', e?.message || e);
     }
 
-    console.log(`🚀 MCP server listening at http://localhost:${port}/mcp/`);
+    console.log(`[mcpServer] MCP server listening at http://localhost:${port}/mcp/`);
   });
   // Handle low-level client socket errors cleanly
   server.on('clientError', (err, socket) => {
