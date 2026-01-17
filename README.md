@@ -1,4 +1,4 @@
-# Geth MCP Proxy
+# Geth (Ethereum) MCP
 
 [![Node.js](https://img.shields.io/badge/Node.js-v18%2B-green)](https://nodejs.org/) [![Express.js](https://img.shields.io/badge/Express.js-v4-blue)](https://expressjs.com/) [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
@@ -21,8 +21,8 @@ This project is a Node.js proxy that exposes an Ethereum JSON-RPC endpoint (Geth
 
 1. Clone and install:
    ```sh
-   git clone https://github.com/John0n1/Geth-MCP-Proxy.git
-   cd Geth-MCP-Proxy
+   git clone https://github.com/John0n1/Geth-MCP.git
+   cd Geth-MCP
    npm install
    ```
 
