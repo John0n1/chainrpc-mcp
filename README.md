@@ -1,28 +1,28 @@
-# Geth (Ethereum) MCP
+# Ethereum JSON-RPC MCP
 
 [![Node.js](https://img.shields.io/badge/Node.js-v18%2B-green)](https://nodejs.org/) [![Express.js](https://img.shields.io/badge/Express.js-v4-blue)](https://expressjs.com/) [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 ## Introduction
 
-This project is a Node.js proxy that exposes an Ethereum JSON-RPC endpoint (Geth) as MCP tools. It focuses on a beginner-friendly MCP surface with schema validation, readable responses, and a passthrough tool (`eth_callRaw`) for any method that is not explicitly registered.
+This project provides a Node.js-based proxy server designed to expose an Ethereum JSON-RPC endpoint as a suite of MCP tools. The primary objective is to offer an accessible MCP interface, featuring robust schema validation, clear and concise responses, and a passthrough utility (`eth_callRaw`) for methods not explicitly defined.
 
 <img width="569" height="981" alt="screenshot_vscode_3" src="https://github.com/user-attachments/assets/57a6f36e-7b15-4c2c-aa32-d064e45600fc" />
 
 ## Features
 
-- MCP tool registration with Zod validation and friendly aliases.
-- Common Ethereum RPC methods plus a small set of admin/debug/txpool helpers.
-- Hex to decimal formatting for block numbers, balances, and gas prices.
-- Safe-by-default transaction broadcasting (`ALLOW_SEND_RAW_TX=1` to enable).
-- Health and discovery endpoints (`/`, `/health`, `/mcp`).
-- Passthrough JSON-RPC via `eth_callRaw` (respects send-raw-tx safety).
+- MCP tool registration, incorporating Zod validation and user-friendly aliases.
+- Support for prevalent Ethereum RPC methods, augmented by a selection of administrative, debugging, and transaction pool utilities.
+- Automatic conversion of hexadecimal values to decimal for block numbers, balances, and gas prices.
+- Secure-by-default transaction broadcasting, with an option to enable raw transaction submission via `ALLOW_SEND_RAW_TX=1`.
+- Dedicated endpoints for health monitoring and service discovery (`/`, `/health`, `/mcp`).
+- JSON-RPC passthrough functionality through `eth_callRaw`, adhering to established raw transaction submission safety protocols..
 
 ## Quickstart
 
 1. Clone and install:
    ```sh
-   git clone https://github.com/John0n1/Geth-MCP.git
-   cd Geth-MCP
+   git clone https://github.com/John0n1/ethereum-mcp.git
+   cd ethereum-mcp
    npm install
    ```
 
@@ -66,7 +66,7 @@ This project is a Node.js proxy that exposes an Ethereum JSON-RPC endpoint (Geth
 Create a `.env` file in the root directory:
 
 ```sh
-GETH_URL=http://localhost:8545  # URL to your Geth node's JSON-RPC endpoint
+GETH_URL=http://localhost:8545  # URL to your Geth/Nethermind node's JSON-RPC endpoint
 PORT=3000                       # Optional: Server port (default: 3000)
 ALLOW_SEND_RAW_TX=0             # Optional: Set to 1/true to enable transaction broadcasting
 ```
@@ -87,7 +87,7 @@ If your MCP client uses a config file, point it to the server:
 
 ```json
 {
-  "geth-mcp-proxy": {
+  "ethereum-mcp": {
     "url": "http://localhost:3000/mcp/",
     "type": "http",
     "headers": {
