@@ -1,4 +1,9 @@
 node_modules/
 .env
-.env.local
-package-lock.json
+.env.*
+.npmrc
+.coverage/
+coverage/
+npm-debug.log*
+*.nocommit
+*.tgz

@@ -1,141 +1,228 @@
-# Ethereum JSON-RPC MCP
+# ChainRPC MCP
 
-[![Node.js](https://img.shields.io/badge/Node.js-v18%2B-green)](https://nodejs.org/) [![Express.js](https://img.shields.io/badge/Express.js-v4-blue)](https://expressjs.com/) [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+<!-- mcp-name: io.github.john0n1/chainrpc-mcp -->
 
-## Introduction
+[![npm](https://img.shields.io/npm/v/chainrpc-mcp?logo=npm)](https://www.npmjs.com/package/chainrpc-mcp)
+[![CI](https://github.com/John0n1/chainrpc-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/John0n1/chainrpc-mcp/actions/workflows/ci.yml)
+[![Node.js](https://img.shields.io/node/v/chainrpc-mcp)](package.json)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-This project provides a Node.js-based proxy server designed to expose an Ethereum JSON-RPC endpoint as a suite of MCP tools. The primary objective is to offer an accessible MCP interface, featuring robust schema validation, clear and concise responses, and a passthrough utility (`eth_callRaw`) for methods not explicitly defined.
+A safety-first [Model Context Protocol](https://modelcontextprotocol.io/) server for EVM chains and Bitcoin.
 
-<img width="569" height="981" alt="screenshot_vscode_3" src="https://github.com/user-attachments/assets/57a6f36e-7b15-4c2c-aa32-d064e45600fc" />
+ChainRPC MCP gives agents a focused set of tools for balances, blocks, transactions, logs, smart-contract reads, gas and fee estimation, and transaction decoding. It can submit **already-signed** transactions, but only behind explicit, disabled-by-default safety gates. It never accepts private keys, manages wallets, or signs transactions.
 
-## Features
+- **Two ecosystems, one server:** EVM JSON-RPC and Bitcoin Core-compatible RPC.
+- **Useful without an account:** defaults to public Ethereum and Bitcoin endpoints from [PublicNode](https://publicnode.com/).
+- **Bring your own infrastructure:** replace either endpoint and optionally use HTTP Basic authentication.
+- **Official transports:** local stdio and stateful Streamable HTTP through the official MCP SDK.
+- **Constrained by design:** no arbitrary RPC passthrough and no wallet, admin, debug, miner, or node-management methods.
 
-- MCP tool registration, incorporating Zod validation and user-friendly aliases.
-- Support for prevalent Ethereum RPC methods, augmented by a selection of administrative, debugging, and transaction pool utilities.
-- Automatic conversion of hexadecimal values to decimal for block numbers, balances, and gas prices.
-- Secure-by-default transaction broadcasting, with an option to enable raw transaction submission via `ALLOW_SEND_RAW_TX=1`.
-- Dedicated endpoints for health monitoring and service discovery (`/`, `/health`, `/mcp`).
-- JSON-RPC passthrough functionality through `eth_callRaw`, adhering to established raw transaction submission safety protocols..
+## Choose how to connect
 
-## Quickstart
+### Hosted, read-only service
 
-1. Clone and install:
-   ```sh
-   git clone https://github.com/John0n1/ethereum-mcp.git
-   cd ethereum-mcp
-   npm install
-   ```
+The public endpoint is available now:
 
-2. Copy the env template and edit `GETH_URL`:
-   ```sh
-   # PowerShell
-   Copy-Item example.env .env
-
-   # macOS/Linux
-   cp example.env .env
-   ```
-
-3. Start the server:
-   ```sh
-   npm start
-   ```
-
-4. Verify connectivity:
-   ```sh
-   curl http://localhost:3000/health?upstream=1
-   ```
-
-5. List tools:
-   ```sh
-   curl -s http://localhost:3000/mcp \
-     -H "Content-Type: application/json" \
-     -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'
-   ```
-
-6. Call a tool:
-   ```sh
-   curl -s http://localhost:3000/mcp \
-     -H "Content-Type: application/json" \
-     -d '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"getBlockNumber","arguments":{}}}'
-   ```
-
-<img width="571" height="1287" alt="screenshot_vscode_4" src="https://github.com/user-attachments/assets/0ba7b12b-df3a-421a-b8f9-269491c1427a" />
-
-## Configuration
-
-Create a `.env` file in the root directory:
-
-```sh
-GETH_URL=http://localhost:8545  # URL to your Geth/Nethermind node's JSON-RPC endpoint
-PORT=3000                       # Optional: Server port (default: 3000)
-ALLOW_SEND_RAW_TX=0             # Optional: Set to 1/true to enable transaction broadcasting
+```text
+https://chainrpc-mcp.mitander.io/mcp
 ```
 
-- **GETH_URL** is required.
-- Some admin/debug methods may require Geth flags such as `--http.api` or `--ws.api`.
-
-## Usage
-
-- **Root**: `GET /` returns basic metadata and endpoints.
-- **Health**: `GET /health` (add `?upstream=1` to verify Geth).
-- **MCP**: `POST /mcp` supports `initialize`, `tools/list`, and `tools/call`.
-- **Simple REST**: `GET /blockNumber` returns the current block number in hex and decimal.
-
-## MCP Client Config
-
-If your MCP client uses a config file, point it to the server:
+For clients that accept a remote Streamable HTTP server:
 
 ```json
 {
-  "ethereum-mcp": {
-    "url": "http://localhost:3000/mcp/",
-    "type": "http",
-    "headers": {
-      "Content-Type": "application/json"
+  "mcpServers": {
+    "chainrpc-mcp": {
+      "url": "https://chainrpc-mcp.mitander.io/mcp"
     }
   }
 }
 ```
 
-## Available Tools
+Health and upstream status:
 
-Call `tools/list` for the live list. Highlights include:
+```sh
+curl 'https://chainrpc-mcp.mitander.io/health?upstream=1'
+```
 
-### Core Ethereum Tools
-- `eth_blockNumber` (aliases: `getBlockNumber`, `eth_getBlockNumber`)
-- `eth_getBalance` (alias: `getBalance`)
-- `eth_chainId` (alias: `getChainId`)
-- `eth_gasPrice` (alias: `getGasPrice`)
-- `eth_syncing` (aliases: `isSyncing`, `eth_isSyncing`)
-- `eth_getBlockByNumber` (alias: `getBlock`)
-- `eth_getTransactionByHash`
-- `eth_call` (alias: `call`)
-- `eth_estimateGas` (alias: `estimateGas`)
-- `eth_getTransactionReceipt` (alias: `getTransactionReceipt`)
-- `eth_getLogs` (alias: `getLogs`)
-- `eth_getProof` (alias: `getProof`)
-- `eth_sendRawTransaction` (alias: `sendRawTransaction`, gated by `ALLOW_SEND_RAW_TX`)
-- `eth_callRaw` (alias: `ethCallRaw`)
+The hosted service is shared, rate-limited, and intentionally has both broadcast features disabled. It is suitable for evaluation and public-chain reads, but has no availability SLA. Requests are visible to the service operator and upstream RPC providers; use your own deployment for sensitive queries or production workloads.
 
-Block parameters accept tags like `latest`/`pending` or decimal/hex block numbers.
+### Local stdio server
 
-### Admin Tools
-- `admin_peers` (alias: `getPeers`)
-- `admin_nodeInfo`
+Requirements: Node.js 20 or newer.
 
-### Debug Tools
-- `debug_metrics`
-- `debug_traceTransaction` (alias: `traceTransaction`)
-- `debug_blockProfile` (alias: `blockProfile`)
-- `debug_getBlockRlp` (alias: `getBlockRlp`)
+```sh
+npx -y chainrpc-mcp
+```
 
-### Txpool Tools
-- `txpool_status`
+Example client configuration:
 
-## Contributing
+```json
+{
+  "mcpServers": {
+    "chainrpc-mcp": {
+      "command": "npx",
+      "args": ["-y", "chainrpc-mcp"],
+      "env": {
+        "EVM_RPC_URL": "https://ethereum-rpc.publicnode.com",
+        "BITCOIN_RPC_URL": "https://bitcoin-rpc.publicnode.com"
+      }
+    }
+  }
+}
+```
 
-Contributions are welcome! Please open an issue or submit a pull request for bug fixes, new tools, or improvements.
+The RPC variables are optional; they are shown to make the defaults explicit.
+
+## Available tools
+
+### EVM
+
+| Tool | Purpose | State-changing |
+|---|---|---:|
+| `evm_getBlockNumber` | Return the latest block number | No |
+| `evm_getChainInfo` | Return chain ID and client version | No |
+| `evm_getNativeBalance` | Read a native-token balance at a block | No |
+| `evm_getBlock` | Read a block by number, tag, or hash | No |
+| `evm_getTransaction` | Read a transaction and receipt | No |
+| `evm_call` | Execute an `eth_call` with encoded calldata | No |
+| `evm_readContract` | Encode, call, and decode a function from its ABI | No |
+| `evm_estimateTransaction` | Estimate gas for an unsigned transaction | No |
+| `evm_getLogs` | Query event logs with address and topic filters | No |
+| `evm_broadcastTransaction` | Preflight and submit signed transaction bytes | **Yes** |
+
+Any HTTP(S) EVM JSON-RPC endpoint can be used, so the same tools work with Ethereum mainnet, testnets, and compatible chains. Results always come from the configured endpoint; callers should inspect `evm_getChainInfo` before making chain-specific assumptions.
+
+### Bitcoin
+
+| Tool | Purpose | State-changing |
+|---|---|---:|
+| `btc_getBlockchainInfo` | Return network, height, sync, and pruning information | No |
+| `btc_getAddressBalance` | Scan confirmed UTXOs for an address | No |
+| `btc_getBlock` | Read a block by height or hash | No |
+| `btc_getTransaction` | Read raw transaction details | No |
+| `btc_getTxOut` | Look up an unspent transaction output | No |
+| `btc_estimateFee` | Estimate a fee rate for a confirmation target | No |
+| `btc_decodeRawTransaction` | Decode serialized transaction bytes | No |
+| `btc_broadcastTransaction` | Validate and submit signed transaction bytes | **Yes** |
+
+Bitcoin Core is not an address indexer. `btc_getAddressBalance` uses `scantxoutset`, which reports currently unspent, confirmed outputs—not history or unconfirmed balance. Only one scan can run on a node at a time, so a shared endpoint may return `scan already in progress`. Use a dedicated node for frequent address scans.
+
+## Safety model
+
+ChainRPC MCP treats transaction submission as an exceptional operation:
+
+- Broadcasting is off unless `ALLOW_EVM_BROADCAST` or `ALLOW_BITCOIN_BROADCAST` is explicitly enabled.
+- The server accepts only serialized, already-signed transaction bytes.
+- Every broadcast call requires the literal confirmation `I understand this broadcasts a real transaction`.
+- EVM submission checks the endpoint and transaction chain IDs, rejects unprotected legacy transactions, recovers the signer, and runs `eth_estimateGas` first.
+- Bitcoin submission checks the endpoint network and requires `testmempoolaccept` to approve the transaction.
+- Submission requests are never automatically retried. A timeout can leave broadcast status ambiguous.
+- Read inputs use strict schemas; upstream concurrency, timeout, retry, and response sizes are bounded.
+- HTTP mode validates hosts and browser origins, supports bearer authentication, caps request bodies, and binds to loopback by default.
+
+RPC responses are untrusted external data. A compromised endpoint can lie about chain state, censor requests, or observe queries. Independently verify high-value decisions, ideally against infrastructure you control.
+
+See [SECURITY.md](SECURITY.md) for vulnerability reporting and the complete trust boundary.
+
+## Configuration
+
+Copy [`example.env`](example.env) to `.env` when running from a checkout.
+
+| Variable | Default | Description |
+|---|---|---|
+| `EVM_RPC_URL` | `https://ethereum-rpc.publicnode.com` | Any HTTP(S) EVM JSON-RPC endpoint |
+| `BITCOIN_RPC_URL` | `https://bitcoin-rpc.publicnode.com` | Any HTTP(S) Bitcoin Core-compatible endpoint |
+| `EVM_RPC_USERNAME` / `EVM_RPC_PASSWORD` | unset | Optional EVM HTTP Basic authentication pair |
+| `BITCOIN_RPC_USERNAME` / `BITCOIN_RPC_PASSWORD` | unset | Optional Bitcoin HTTP Basic authentication pair |
+| `RPC_TIMEOUT_MS` | `12000` | Per-attempt upstream timeout |
+| `RPC_RETRIES` | `1` | Retry count for retryable reads only |
+| `RPC_MAX_RESPONSE_BYTES` | `10000000` | Maximum upstream response body |
+| `RPC_MAX_CONCURRENCY` | `20` | Maximum concurrent requests per chain client |
+| `ALLOW_EVM_BROADCAST` | `false` | Enable signed EVM transaction submission |
+| `ALLOW_BITCOIN_BROADCAST` | `false` | Enable signed Bitcoin transaction submission |
+| `TRANSPORT` | `stdio` | Default transport: `stdio` or `http` |
+| `HOST` / `PORT` | `127.0.0.1` / `3000` | HTTP bind address and port |
+| `MCP_PATH` | `/mcp` | Streamable HTTP MCP path |
+| `MCP_AUTH_TOKEN` | unset | Optional bearer token for `/mcp` |
+| `ALLOWED_HOSTS` | unset | Required allowlist when binding HTTP to a non-loopback address |
+| `CORS_ORIGINS` | unset | Comma-separated browser-origin allowlist |
+| `MAX_MCP_SESSIONS` | `1000` | Maximum concurrent HTTP MCP sessions |
+| `HTTP_BODY_LIMIT` | `1mb` | Express request-body limit |
+
+`GETH_URL` remains a deprecated compatibility alias for `EVM_RPC_URL`. Credentials embedded in RPC URLs are rejected; use the matching username and password variables.
+
+## Self-host with Streamable HTTP
+
+Start a loopback-only HTTP server:
+
+```sh
+npm start
+curl 'http://127.0.0.1:3000/health?upstream=1'
+```
+
+To bind beyond loopback, explicitly set the host allowlist and authentication:
+
+```sh
+HOST=0.0.0.0 \
+ALLOWED_HOSTS=mcp.example.com \
+MCP_AUTH_TOKEN='replace-with-a-long-random-secret' \
+npm start
+```
+
+Terminate TLS at a trusted reverse proxy, preserve the original `Host` header, and keep the origin private. A bearer token is useful for a single trusted client; use an OAuth-capable gateway and network access policy for multi-user deployments.
+
+Docker defaults to stdio. Override the command for HTTP:
+
+```sh
+docker build -t chainrpc-mcp .
+docker run --rm -p 127.0.0.1:3000:3000 \
+  -e HOST=0.0.0.0 \
+  -e ALLOWED_HOSTS=localhost,127.0.0.1 \
+  -e MCP_AUTH_TOKEN='replace-with-a-long-random-secret' \
+  chainrpc-mcp --http
+```
+
+Production service topology:
+
+```text
+MCP client
+    |
+    v
+Cloudflare edge -> outbound-only Cloudflare Tunnel -> nginx on loopback
+                                                     |
+                                                     v
+                                              ChainRPC MCP
+                                                /       \
+                                               v         v
+                                          EVM RPC    Bitcoin RPC
+```
+
+Deployment units, nginx configuration, hardening details, and operating commands are in [docs/OPERATIONS.md](docs/OPERATIONS.md).
+
+## Development
+
+```sh
+git clone https://github.com/John0n1/chainrpc-mcp.git
+cd chainrpc-mcp
+npm ci
+npm run check
+npm run test:coverage
+```
+
+Useful commands:
+
+| Command | Purpose |
+|---|---|
+| `npm run start:stdio` | Start the stdio transport |
+| `npm start` | Start Streamable HTTP |
+| `npm run dev` | Start HTTP with Node watch mode |
+| `npm test` | Run the test suite |
+| `npm run check` | Syntax-check the entry point and run all tests |
+| `npm pack --dry-run` | Inspect the npm package contents |
+
+The detailed design and remediation record is in [docs/AUDIT.md](docs/AUDIT.md). Contributions are welcome through issues and pull requests. Please use a private GitHub security advisory—not a public issue—for suspected vulnerabilities.
 
 ## License
 
-This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
+[MIT](LICENSE)

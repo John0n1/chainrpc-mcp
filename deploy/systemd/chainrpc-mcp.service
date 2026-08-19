@@ -1,0 +1,48 @@
+[Unit]
+Description=ChainRPC MCP server
+Documentation=https://github.com/John0n1/chainrpc-mcp
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=chainrpc-mcp
+Group=chainrpc-mcp
+WorkingDirectory=/opt/chainrpc-mcp
+Environment=NODE_ENV=production
+EnvironmentFile=/etc/chainrpc-mcp/environment
+ExecStartPre=/opt/chainrpc-mcp/node --check /opt/chainrpc-mcp/src/index.js
+ExecStart=/opt/chainrpc-mcp/node /opt/chainrpc-mcp/src/index.js --http
+Restart=on-failure
+RestartSec=5s
+TimeoutStopSec=20s
+KillSignal=SIGTERM
+UMask=0077
+
+NoNewPrivileges=true
+PrivateDevices=true
+PrivateTmp=true
+ProtectClock=true
+ProtectControlGroups=true
+ProtectHome=true
+ProtectHostname=true
+ProtectKernelLogs=true
+ProtectKernelModules=true
+ProtectKernelTunables=true
+ProtectSystem=strict
+RemoveIPC=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictNamespaces=true
+RestrictRealtime=true
+LockPersonality=true
+CapabilityBoundingSet=
+AmbientCapabilities=
+SystemCallArchitectures=native
+
+LimitNOFILE=8192
+TasksMax=100
+MemoryHigh=384M
+MemoryMax=512M
+
+[Install]
+WantedBy=multi-user.target

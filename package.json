@@ -1,21 +1,64 @@
 {
-  "name": "geth-mcp-server",
-  "version": "1.0.0",
-  "private": true,
-  "description": "Local MCP server proxying Ethereum JSON-RPC (geth-mcp-proxy)",
-  "main": "mcpServer.js",
-  "type": "commonjs",
+  "name": "chainrpc-mcp",
+  "version": "2.0.1",
+  "description": "A safety-first MCP server for EVM chains and Bitcoin",
+  "type": "module",
+  "main": "src/index.js",
+  "bin": {
+    "chainrpc-mcp": "src/index.js"
+  },
+  "files": [
+    "src",
+    "docs",
+    "README.md",
+    "SECURITY.md",
+    "LICENSE",
+    "server.json",
+    "example.env"
+  ],
   "scripts": {
-    "start": "node mcpServer.js",
-    "dev": "nodemon mcpServer.js"
+    "start": "node src/index.js --http",
+    "start:stdio": "node src/index.js --stdio",
+    "dev": "node --watch src/index.js --http",
+    "test": "node --test",
+    "test:coverage": "node --test --experimental-test-coverage",
+    "check": "node --check src/index.js && node --test",
+    "prepack": "npm run check"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "ethereum",
+    "evm",
+    "bitcoin",
+    "bitcoin-core",
+    "json-rpc",
+    "smart-contracts",
+    "ai-agents",
+    "web3"
+  ],
+  "author": "John Hauger Mitander",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/John0n1/chainrpc-mcp.git"
+  },
+  "bugs": {
+    "url": "https://github.com/John0n1/chainrpc-mcp/issues"
+  },
+  "homepage": "https://github.com/John0n1/chainrpc-mcp#readme",
+  "mcpName": "io.github.john0n1/chainrpc-mcp",
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "publishConfig": {
+    "access": "public"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.24.0",
-    "dotenv": "^16.4.5",
-    "express": "^4.19.2",
-    "zod": "^3.23.8"
-  },
-  "devDependencies": {
-    "nodemon": "^3.1.4"
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "dotenv": "^17.2.3",
+    "express": "^5.1.0",
+    "viem": "^2.55.19",
+    "zod": "^3.25.76"
   }
 }

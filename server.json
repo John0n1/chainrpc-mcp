@@ -1,0 +1,51 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.john0n1/chainrpc-mcp",
+  "title": "ChainRPC MCP",
+  "description": "Safety-first EVM and Bitcoin RPC tools for balances, contracts, blocks, and transactions",
+  "repository": {
+    "url": "https://github.com/John0n1/chainrpc-mcp",
+    "source": "github",
+    "id": "1037537993"
+  },
+  "version": "2.0.1",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://chainrpc-mcp.mitander.io/mcp"
+    }
+  ],
+  "packages": [
+    {
+      "registryType": "npm",
+      "registryBaseUrl": "https://registry.npmjs.org",
+      "identifier": "chainrpc-mcp",
+      "version": "2.0.1",
+      "transport": { "type": "stdio" },
+      "environmentVariables": [
+        {
+          "name": "EVM_RPC_URL",
+          "description": "EVM JSON-RPC endpoint",
+          "default": "https://ethereum-rpc.publicnode.com"
+        },
+        {
+          "name": "BITCOIN_RPC_URL",
+          "description": "Bitcoin Core-compatible JSON-RPC endpoint",
+          "default": "https://bitcoin-rpc.publicnode.com"
+        },
+        {
+          "name": "ALLOW_EVM_BROADCAST",
+          "description": "Explicitly enable signed EVM transaction broadcasts",
+          "format": "boolean",
+          "default": "false"
+        },
+        {
+          "name": "ALLOW_BITCOIN_BROADCAST",
+          "description": "Explicitly enable signed Bitcoin transaction broadcasts",
+          "format": "boolean",
+          "default": "false"
+        }
+      ]
+    }
+  ]
+}

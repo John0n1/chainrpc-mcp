@@ -1,9 +1,8 @@
 {
-  "geth-mcp-proxy": {
-     "url": "http://localhost:3000/mcp/",
-     "type": "http",
-     "headers": {
-       "Content-Type": "application/json"
-     }
+  "mcpServers": {
+    "chainrpc-mcp": {
+      "command": "npx",
+      "args": ["-y", "chainrpc-mcp"]
+    }
   }
 }
