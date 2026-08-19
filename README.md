@@ -1,6 +1,6 @@
 # ChainRPC MCP
 
-<!-- mcp-name: io.github.john0n1/chainrpc-mcp -->
+<!-- mcp-name: io.github.John0n1/chainrpc-mcp -->
 
 [![npm](https://img.shields.io/npm/v/chainrpc-mcp?logo=npm)](https://www.npmjs.com/package/chainrpc-mcp)
 [![CI](https://github.com/John0n1/chainrpc-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/John0n1/chainrpc-mcp/actions/workflows/ci.yml)

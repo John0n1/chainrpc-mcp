@@ -1,6 +1,6 @@
 {
   "name": "chainrpc-mcp",
-  "version": "2.0.1",
+  "version": "2.0.2",
   "description": "A safety-first MCP server for EVM chains and Bitcoin",
   "type": "module",
   "main": "src/index.js",
@@ -47,7 +47,7 @@
     "url": "https://github.com/John0n1/chainrpc-mcp/issues"
   },
   "homepage": "https://github.com/John0n1/chainrpc-mcp#readme",
-  "mcpName": "io.github.john0n1/chainrpc-mcp",
+  "mcpName": "io.github.John0n1/chainrpc-mcp",
   "engines": {
     "node": ">=20.0.0"
   },
