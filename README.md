@@ -1,5 +1,7 @@
 # ChainRPC MCP
 
+#### JSON-RPC MCP server for EVM chains and Bitcoin
+
 <!-- mcp-name: io.github.John0n1/chainrpc-mcp -->
 
 [![npm](https://img.shields.io/npm/v/chainrpc-mcp?logo=npm)](https://www.npmjs.com/package/chainrpc-mcp)
